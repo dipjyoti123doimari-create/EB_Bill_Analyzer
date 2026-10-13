@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import filter_bar, pager %}
+{% block title %}Plant Monitoring{% endblock %}
+{% block content %}
+
+<div class="page-header"><h1>Plant-wise Electricity Monitoring</h1>
+  <p>One row per account and billing month (the latest bill if several exist). Server-side filtering, sorting and paging.</p></div>
+
+{{ filter_bar(opts, f, url_for('page_monitor'), show='period,ym,state,discom,plant,basis,pf_status,exception,quality,q') }}
+
+<div class="card">
+  <div class="btn-group" style="margin-bottom:10px">
+    <span class="eb-muted">{{ t.total }} bill(s){% if k.unverified %} · {{ k.unverified }} not yet verified{% endif %}</span>
+    <span style="margin-left:auto"></span>
+    <div class="colmenu" id="colmenu"><button type="button" class="btn btn-secondary btn-sm">Columns ▾</button><div></div></div>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('export_monitor') }}?{{ request.query_string.decode() }}">⬇ Export Excel</a>
+  </div>
+  <div class="eb-scroll"><table class="eb-table" id="mon">
+    {% macro th(key, label, cls='') %}<th class="{{ cls }}"><a href="?{{ qs(sort=key, dir=('asc' if (sort == key and direction == 'desc') else 'desc'), page=None) }}">{{ label }}{% if sort == key %} {{ '▼' if direction == 'desc' else '▲' }}{% endif %}</a></th>{% endmacro %}
+    <thead><tr><th data-fixed="1">Sr</th>{{ th('plant', 'Plant') }}{{ th('state', 'State') }}{{ th('discom', 'DISCOM') }}{{ th('period', 'Billing period') }}{{ th('basis', 'Basis') }}{{ th('kwh', 'kWh', 'num') }}{{ th('kvah', 'kVAh', 'num') }}
+      {{ th('pf', 'PF', 'num') }}{{ th('cd', 'Contract demand', 'num') }}{{ th('md', 'Max demand', 'num') }}{{ th('pf_penalty', 'PF penalty ₹', 'num') }}{{ th('demand_penalty', 'Demand penalty ₹', 'num') }}{{ th('total', 'Total bill ₹', 'num') }}{{ th('status', 'Status') }}</tr></thead>
+    <tbody>
+    {% for r in t.rows %}
+      <tr>
+        <td>{{ (t.page - 1) * t.per_page + loop.index }}</td>
+        <td><a href="{{ url_for('page_plant', code=r.plant_code) }}">{{ r.plant_code }}</a> <span class="eb-muted">{{ r.plant_name or '' }}</span></td>
+        <td>{{ r.state or '—' }}</td><td>{{ r.discom_code or '—' }}</td>
+        <td>{{ r.period_start or '—' }} → {{ r.period_end or '—' }}</td>
+        <td>{{ r.billing_basis }}</td>
+        <td class="num">{{ r.kwh | num(0) if r.kwh is not none else '—' }}</td><td class="num">{{ r.kvah | num(0) if r.kvah is not none else '—' }}</td>
+        <td class="num">{% if r.pf_used is not none %}<span class="badge {{ PF_BADGE[r.performance_status] }}" title="{{ r.pf_source }}{% if r.validation_status in ('MISMATCH','INVALID_ENERGY') %} — PF disagrees with kWh/kVAh{% endif %}">{{ r.pf_used | pf }}</span>{% if r.validation_status in ('MISMATCH','INVALID_ENERGY') %} ⚠{% endif %}{% else %}—{% endif %}</td>
+        <td class="num">{{ (r.contract_demand | num(2) ~ ' ' ~ (r.contract_demand_unit or '?')) if r.contract_demand is not none else '—' }}</td>
+        <td class="num">{{ (r.max_demand | num(2) ~ ' ' ~ (r.max_demand_unit or '?')) if r.max_demand is not none else '—' }}{% if r.violation_status in ('VIOLATION', 'VIOLATION_BILLED') %} <span class="badge badge-red">violation</span>{% elif ',DEMAND_IMPLAUSIBLE,' in r.data_flags %} <span class="badge badge-amber" title="the demand figures contradict each other; check the bill">check</span>{% elif r.violation_status and r.violation_status.startswith('UNVERIFIED') %} <span class="badge badge-muted" title="above contract demand; no approved tariff rule defines a violation">&gt; CD</span>{% endif %}</td>
+        <td class="num">{% if r.pf_penalty_status == 'UNREADABLE' %}<span class="badge badge-amber">unreadable</span>{% elif r.pf_penalty is not none %}{{ r.pf_penalty | inr }}{% else %}—{% endif %}</td>
+        <td class="num">{% if r.excess_demand_status == 'UNREADABLE' %}<span class="badge badge-amber">unreadable</span>{% elif r.excess_demand_penalty is not none %}{{ r.excess_demand_penalty | inr }}{% else %}—{% endif %}</td>
+        <td class="num">{{ (r.total_bill_amount if r.total_bill_amount is not none else r.total_payable) | inr(0) }}</td>
+        <td><a href="{{ url_for('page_bill_redirect', bill_id=r.id) }}"><span class="badge {{ BILL_BADGE[r.bill_status] }}">{{ r.bill_status.replace('_', ' ') }}</span></a>{% if r.revision_count > 1 %} <span class="badge badge-purple" title="{{ r.revision_count }} bills for this month">rev {{ r.revision_count }}</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="15" class="eb-muted" style="text-align:center;padding:24px">No bills match these filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+  {{ pager(t.page, t.pages) }}
+  <div class="eb-note">“—” means not found / not applicable, never zero. Units are shown as read from the bill; “?” means the bill did not show a unit. A violation is shown only where an approved tariff rule defines it or the board billed a penalty.</div>
+</div>
+{% endblock %}
+{% block scripts %}<script>ebColumns('mon', 'colmenu', 'eb-cols-monitor');</script>{% endblock %}
+

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import filter_bar %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Reports</h1><p>Excel workbooks with the same filters as the dashboard. Each workbook states its scope, how many bills are unverified, and the definitions.</p></div>
+{{ filter_bar(opts, f, url_for('page_reports'), show='period,state,discom,plant,basis,quality') }}
+<div class="card"><div class="section-title">Download with the filters above</div>
+  <div class="eb-note">Click a report to download it with the current filter selection (apply the filters first).</div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+  {% for key, label in kinds %}
+    <a class="kpi-card" style="text-decoration:none;display:block" href="{{ url_for('download_report', kind=key) }}?{{ request.query_string.decode() }}">
+      <div class="kpi-label">Excel</div><div style="font-size:15px;font-weight:700;color:#fff">{{ label }}</div>
+      <div class="kpi-sub">{{ {'pf_penalties': 'ACTUAL amounts printed on bills', 'savings': 'THEORETICAL — never added to penalties', 'register': 'every bill incl. revisions', 'exceptions': 'bills that are not verified', 'monitor': 'the plant-wise table'}.get(key, 'filtered by the selection above') }}</div></a>
+  {% endfor %}</div>
+</div>
+{% endblock %}

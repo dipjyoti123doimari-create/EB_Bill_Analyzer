@@ -1,0 +1,15 @@
+data/
+storage/
+__pycache__/
+*.pyc
+*.log
+.venv/
+*.bak*
+*.db
+*.db-wal
+*.db-shm
+secret.key
+.env
+
+# real consumer numbers / amounts from RDC bills - keep out of any remote
+tests/gold/

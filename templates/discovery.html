@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}PO &amp; Attachment Discovery{% endblock %}
+{% block content %}
+
+<h2 style="margin:0 0 4px">PO &amp; Attachment Discovery</h2>
+<p class="eb-note">Electricity POs are found in Oracle EBS by item code, mapped to plants through their distributions, and their attachments are catalogued. Read-only; nothing is written to Oracle.</p>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Electricity POs</div><div class="kpi-value">{{ s.pos_eligible }}</div><div class="kpi-sub">{{ s.pos_total - s.pos_eligible }} excluded by rules</div></div>
+  <div class="kpi-card"><div class="kpi-label">Plants</div><div class="kpi-value">{{ s.plants }}</div><div class="kpi-sub">with at least one electricity PO</div></div>
+  <div class="kpi-card"><div class="kpi-label">Downloadable files</div><div class="kpi-value">{{ s.files_total }}</div><div class="kpi-sub">{{ s.files_downloaded }} downloaded · {{ s.files_pending }} pending</div></div>
+  <div class="kpi-card"><div class="kpi-label">Web-link attachments</div><div class="kpi-value">{{ s.web_links }}</div><div class="kpi-sub">DMS links — not stored in the database</div></div>
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 8px">Latest scan runs</h3>
+  <div class="eb-scroll">
+  <table class="eb-table">
+    <thead><tr><th>#</th><th>Mode</th><th>Trigger</th><th>Started</th><th>Finished</th><th>Status</th><th>POs</th><th>New POs</th><th>Attachments seen</th><th>New</th><th>Revised</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr>
+        <td>{{ r.id }}</td><td>{{ r.mode }}</td><td>{{ r.trigger }}</td><td>{{ r.started_at }}</td><td>{{ r.finished_at or '—' }}</td>
+        <td><span class="badge {{ 'badge-green' if r.status == 'SUCCESS' else ('badge-red' if r.status == 'FAILED' else 'badge-purple') }}">{{ r.status }}</span></td>
+        <td>{{ r.pos_inspected }}</td><td>{{ r.new_pos }}</td><td>{{ r.attachments_seen }}</td><td>{{ r.new_attachments }}</td><td>{{ r.changed_attachments }}</td>
+        <td style="white-space:normal">{{ r.message or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="12" style="text-align:center;color:var(--text-faint)">No scan has run yet. Run <code>python -m eb_app.cli scan --mode full</code>.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 8px">Newest electricity POs</h3>
+  <div class="eb-scroll">
+  <table class="eb-table">
+    <thead><tr><th>PO</th><th>Created</th><th>Plant</th><th>Supplier / DISCOM</th><th>Billing period</th><th>Consumer hint</th><th>Status</th><th>Files</th><th>Web links</th><th>Eligible</th></tr></thead>
+    <tbody>
+    {% for p in pos %}
+      <tr>
+        <td>{{ p.po_number }}</td><td>{{ p.po_created }}</td><td>{{ p.plant_code }} — {{ p.plant_name }}</td>
+        <td class="wrap">{{ p.supplier_name }}</td>
+        <td>{{ p.billing_start or '—' }} → {{ p.billing_end or '—' }}</td><td>{{ p.consumer_hint or '—' }}</td>
+        <td>{{ p.auth_status or '—' }}</td><td>{{ p.files }}</td><td>{{ p.web_links }}</td>
+        <td>{% if p.eligible %}<span class="badge badge-green">Yes</span>{% else %}<span class="badge badge-red" title="{{ p.exclusion_reason }}">No</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,13 @@
+# RDC Electricity Intelligence — Python 3.12, installed into this project's own .venv
+# (kept separate from RDC-OPS so OCR/OpenCV packages can never disturb its numpy/pandas)
+oracledb>=2.0                 # Oracle EBS access, thick mode via the existing Instant Client
+Flask>=3.0                    # web UI
+APScheduler>=3.10             # 2-hourly background scan (Phase 4)
+PyMuPDF>=1.24                 # PDF text layer + page rendering
+pillow>=10                    # image formats (JPEG/PNG/TIFF/WebP/BMP)
+numpy>=2.0
+opencv-python-headless>=4.9   # deskew / rotation for OCR
+rapidocr-onnxruntime==1.4.4   # first-pass local OCR (Latin text + numerals)
+rapidocr>=3.10                # second-pass local OCR for Devanagari / Kannada / Tamil / Telugu (models download once)
+pandas>=2.0
+openpyxl>=3.1                 # Excel export (Phase 5)

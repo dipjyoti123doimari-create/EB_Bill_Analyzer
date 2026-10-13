@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Upload Bill{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Upload Bill</h1>
+  <p>For bills that have no PO yet (or are not in Oracle). The file is read by exactly the same engine as Oracle attachments; you then check the extracted values in an editable form. The original is stored unchanged.</p></div>
+
+<div class="card">
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-group"><label>Plant *</label><select name="plant_code" required><option value="">Choose plant…</option>
+      {% for p in plants %}<option value="{{ p.plant_code }}" {% if form.get('plant_code') == p.plant_code %}selected{% endif %}>{{ p.plant_code }} — {{ p.plant_name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Consumer number</label><input type="text" name="consumer_number" value="{{ form.get('consumer_number', '') }}" maxlength="60" placeholder="optional — used to cross-check the bill"></div>
+    <div class="form-group"><label>Electricity board</label><select name="discom_code"><option value="">Detect from the bill</option>
+      {% for d in discoms %}<option value="{{ d.code }}" {% if form.get('discom_code') == d.code %}selected{% endif %}>{{ d.code }} ({{ d.state }})</option>{% endfor %}</select></div>
+    <div class="form-group"><label>PO number</label><input type="text" name="po_number" value="{{ form.get('po_number', '') }}" maxlength="40" placeholder="optional"></div>
+    <div class="form-group"><label>Billing month</label><input type="month" name="billing_month" value="{{ form.get('billing_month', '') }}"></div>
+    <div class="form-group"><label>Bill file * <span class="eb-muted">(PDF, JPG, PNG, TIFF, WebP or BMP, up to 40 MB)</span></label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp,.bmp,application/pdf,image/*"></div>
+    <div><button class="btn btn-primary btn-lg" type="submit">Upload and read</button></div>
+  </form>
+  <div class="eb-note">Reading a scanned bill can take a minute or two; you can leave this page. The same file is never stored twice, and if the same bill is later found attached to an Oracle PO the two are linked automatically.</div>
+</div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">{{ 'Recent uploads' if is_admin else 'Your recent uploads' }}</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>#</th><th>When</th><th>Plant</th><th>File</th><th>By</th><th>Status</th><th>Result</th></tr></thead><tbody>
+  {% for u in recent %}<tr><td>{{ u.id }}</td><td>{{ u.uploaded_at }}</td><td>{{ u.plant_code }}</td><td class="wrap">{{ u.original_name }}</td><td>{{ u.uploaded_by }}</td>
+    <td><span class="badge {{ 'badge-green' if u.status == 'PROCESSED' else 'badge-red' if u.status in ('FAILED','REJECTED') else 'badge-purple' }}">{{ u.status }}</span></td>
+    <td>{% if u.extraction_id %}<a href="{{ url_for('page_extraction', ext_id=u.extraction_id) }}">Open {{ u.bill_status.replace('_', ' ').lower() if u.bill_status }}</a>{% else %}<a href="{{ url_for('page_upload_status', upload_id=u.id) }}">Status</a>{% endif %}{% if u.link_note %} <span class="eb-muted">· {{ u.link_note }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="eb-muted">No uploads yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

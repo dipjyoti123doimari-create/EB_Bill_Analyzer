@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — RDC Electricity Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/eb.css') }}">
+</head><body>
+<canvas id="bg-canvas"></canvas>
+<div class="eb-login card" style="position:relative;z-index:2;padding:28px 30px">
+  <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC">
+  <h2 style="text-align:center;margin:0 0 4px">Electricity Intelligence</h2>
+  <p class="eb-note" style="text-align:center">Sign in with your RDC-OPS username and password.</p>
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  <form method="post" autocomplete="on">
+    <div class="form-group"><label>Username</label><input type="text" name="username" autofocus required autocomplete="username"></div>
+    <div class="form-group"><label>Password</label><input type="password" name="password" required autocomplete="current-password"></div>
+    <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center" type="submit">Sign in</button>
+  </form>
+</div>
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script>initBackground({ animate: false, autoTheme: false, theme: 'Night' });</script>
+</body></html>

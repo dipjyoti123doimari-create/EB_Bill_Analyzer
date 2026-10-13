@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Audit log</h1><p>Every correction, verification, approval, setting change, upload, export, login and scan action. Append-only. {{ total }} entries.</p></div>
+<div class="card"><div class="eb-scroll"><table class="eb-table"><thead><tr><th>When</th><th>User</th><th>Role</th><th>Action</th><th>Entity</th><th class="wrap">Details</th><th>IP</th></tr></thead><tbody>
+{% for a in rows %}<tr><td>{{ a.ts }}</td><td>{{ a.username or '—' }}</td><td>{{ a.role or '' }}</td><td><b>{{ a.action }}</b></td><td>{{ a.entity_type or '' }} {{ a.entity_id or '' }}</td><td class="wrap">{{ (a.details_json or '')[:240] }}</td><td>{{ a.ip_address or '' }}</td></tr>
+{% else %}<tr><td colspan="7" class="eb-muted">Nothing recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+{{ pager(page, pages) }}</div>
+{% endblock %}

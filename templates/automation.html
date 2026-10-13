@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Automation{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Automation monitoring</h1><p>The Oracle scan runs by itself every {{ cfg.scan_interval_minutes }} minutes ({{ (cfg.scan_interval_minutes / 60) | round(1) }} h), whether or not anybody has the website open.</p></div>
+
+<div class="kpi-grid-5">
+  <div class="kpi-card {{ 'bad' if health in ('NOT RUNNING','FAILING') else 'warn' if health in ('RETRYING','PAUSED') else '' }}"><div class="kpi-label">Scheduler health</div><div class="kpi-value">{{ health }}</div><div class="kpi-sub">last heartbeat {{ sch.last_tick_at or 'never' }} · {{ 'running in this server' if in_process else 'not running in this server (a separate worker may own it)' }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Last scan</div><div class="kpi-value" style="font-size:17px">{{ sch.last_cycle_at or '—' }}</div><div class="kpi-sub">last successful: {{ sch.last_success_at or '—' }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Next scheduled scan</div><div class="kpi-value" style="font-size:17px">{{ sch.next_due or 'now' }}</div><div class="kpi-sub">{{ sch.consecutive_failures }} consecutive failure(s){% if sch.last_error %} — {{ sch.last_error[:80] }}{% endif %}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Scan running now</div><div class="kpi-value" style="font-size:17px">{{ 'YES' if lock else 'no' }}</div><div class="kpi-sub">{{ ('lock owner ' ~ lock.owner) if lock else 'idle' }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Oracle connection</div><div class="kpi-value" style="font-size:17px" id="ora2">checking…</div><div class="kpi-sub">read-only; same settings as RDC-OPS</div></div>
+  <div class="kpi-card"><div class="kpi-label">POs inspected</div><div class="kpi-value">{{ totals.pos }}</div><div class="kpi-sub">eligible electricity POs</div></div>
+  <div class="kpi-card"><div class="kpi-label">New attachments (24 h)</div><div class="kpi-value">{{ totals.new_attachments_24h }}</div><div class="kpi-sub">{{ totals.pending_files }} waiting to be downloaded</div></div>
+  <div class="kpi-card"><div class="kpi-label">Successfully processed</div><div class="kpi-value">{{ totals.processed_ok }}</div><div class="kpi-sub">bills read</div></div>
+  <div class="kpi-card {{ 'bad' if totals.failed_bills or totals.failed_downloads }}"><div class="kpi-label">Failed</div><div class="kpi-value">{{ totals.failed_bills }}</div><div class="kpi-sub">bills · {{ totals.failed_downloads }} failed downloads</div></div>
+  <div class="kpi-card {{ 'warn' if totals.pending_reviews }}"><div class="kpi-label">Pending reviews · retry queue</div><div class="kpi-value">{{ totals.pending_reviews }} · {{ totals.retry_queue }}</div><div class="kpi-sub"><a href="{{ url_for('page_review') }}">review list</a></div></div>
+</div>
+
+<div class="card"><div class="btn-group">
+  <button class="btn btn-primary" data-post="{{ url_for('act_scan_now') }}" data-reload>▶ Scan now</button>
+  <button class="btn btn-secondary" data-post="{{ url_for('act_retry_failed') }}" data-confirm="Re-queue every failed download, failed bill and failed job?" data-reload>↻ Retry failed</button>
+  <button class="btn btn-secondary" data-post="{{ url_for('act_test_mail') }}">✉ Send test e-mail</button>
+  <a class="btn btn-secondary" href="{{ url_for('page_review') }}?status=FAILED">Review attachments</a>
+  <a class="btn btn-secondary" href="{{ url_for('page_audit') }}">View logs</a></div>
+  <div class="eb-note" style="margin-top:8px">Alert e-mail: {{ 'ON' if cfg.alert_email_enabled else 'OFF' }} · SMTP {{ smtp.host or 'not configured' }}:{{ smtp.port }} as {{ smtp.sender or '—' }} (password {{ smtp.password }}; shared with RDC-OPS) · recipients {{ cfg.alert_email_to or 'none' }}</div></div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Scan history</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>#</th><th>Mode</th><th>Trigger</th><th>Started</th><th>Finished</th><th>Status</th><th class="num">POs</th><th class="num">New POs</th><th class="num">New att.</th><th class="num">Revised</th><th class="num">Downloaded</th><th class="num">Dl failed</th><th class="num">Read</th><th class="num">Read failed</th><th class="wrap">Message</th></tr></thead><tbody>
+  {% for r in runs %}<tr><td>{{ r.id }}</td><td>{{ r.mode }}</td><td>{{ r.trigger }}</td><td>{{ r.started_at }}</td><td>{{ r.finished_at or '—' }}</td><td><span class="badge {{ 'badge-green' if r.status == 'SUCCESS' else 'badge-red' if r.status == 'FAILED' else 'badge-purple' }}">{{ r.status }}</span></td>
+    <td class="num">{{ r.pos_inspected }}</td><td class="num">{{ r.new_pos }}</td><td class="num">{{ r.new_attachments }}</td><td class="num">{{ r.changed_attachments }}</td><td class="num">{{ r.downloaded or 0 }}</td><td class="num">{{ r.download_failed or 0 }}</td><td class="num">{{ r.processed or 0 }}</td><td class="num">{{ r.process_failed or 0 }}</td><td class="wrap">{{ r.message or '' }}</td></tr>
+  {% else %}<tr><td colspan="15" class="eb-muted">No scan has run yet.</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Processing errors</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>#</th><th>When</th><th>Stage</th><th>Reference</th><th class="wrap">Message</th><th></th></tr></thead><tbody>
+  {% for e in errors %}<tr><td>{{ e.id }}</td><td>{{ e.created_at }}</td><td>{{ e.stage }}</td><td>{{ e.ref_type or '' }} {{ e.ref_id or '' }}</td><td class="wrap">{{ e.message }}</td>
+    <td>{% if e.resolved_at %}<span class="eb-muted">resolved</span>{% else %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_resolve_error', err_id=e.id) }}" data-reload>Resolve</button>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="eb-muted">No errors recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}
+{% block scripts %}<script>
+fetch('/api/oracle-status').then(function (r) { return r.json(); }).then(function (j) { var e = document.getElementById('ora2'); e.textContent = j.state === 'connected' ? 'Reachable' : j.state === 'unconfigured' ? 'Not configured' : 'Unreachable'; e.title = j.label; }).catch(function () { document.getElementById('ora2').textContent = 'unknown'; });
+</script>{% endblock %}

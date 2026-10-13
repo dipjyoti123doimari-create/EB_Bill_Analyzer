@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>{% block title %}Dashboard{% endblock %} — RDC Electricity Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/eb.css') }}">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC" id="app-logo">
+        <div class="sidebar-name">
+          <span class="sidebar-name-main">RDC-EB</span>
+          <span class="sidebar-name-sub">Electricity Intelligence</span>
+        </div>
+        <span class="sidebar-module-badge" style="background:rgba(0,212,255,0.12);color:#00D4FF;border-color:rgba(0,212,255,0.3)">EB</span>
+        <span class="sidebar-tagline">Power factor &amp; demand monitoring</span>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <a href="{{ url_for('page_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('page_monitor') }}" class="nav-item {% if active_page == 'monitor' %}active{% endif %}"><span class="nav-icon">🏭</span><span class="nav-label">Plant Monitoring</span></a>
+      <a href="{{ url_for('page_alerts') }}" class="nav-item {% if active_page == 'alerts' %}active{% endif %}"><span class="nav-icon">🔔</span><span class="nav-label">Alerts</span>{% if open_alerts %}<span class="nav-badge">{{ open_alerts }}</span>{% endif %}</a>
+      <a href="{{ url_for('page_review') }}" class="nav-item {% if active_page == 'review' %}active{% endif %}"><span class="nav-icon">🧾</span><span class="nav-label">Review &amp; Exceptions</span></a>
+      {% if can_upload %}<a href="{{ url_for('page_upload') }}" class="nav-item {% if active_page == 'upload' %}active{% endif %}"><span class="nav-icon">⬆️</span><span class="nav-label">Upload Bill</span></a>{% endif %}
+      <a href="{{ url_for('page_reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}"><span class="nav-icon">📑</span><span class="nav-label">Reports</span></a>
+      {% if is_admin %}
+      <div class="nav-sep">Administration</div>
+      <a href="{{ url_for('page_automation') }}" class="nav-item {% if active_page == 'automation' %}active{% endif %}"><span class="nav-icon">⚙️</span><span class="nav-label">Automation</span></a>
+      <a href="{{ url_for('page_tariffs') }}" class="nav-item {% if active_page == 'tariffs' %}active{% endif %}"><span class="nav-icon">📐</span><span class="nav-label">Tariff Rules</span></a>
+      <a href="{{ url_for('page_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}"><span class="nav-icon">🛠️</span><span class="nav-label">Settings</span></a>
+      <a href="{{ url_for('page_discovery') }}" class="nav-item {% if active_page == 'discovery' %}active{% endif %}"><span class="nav-icon">🔎</span><span class="nav-label">PO &amp; Attachments</span></a>
+      <a href="{{ url_for('page_rules') }}" class="nav-item {% if active_page == 'rules' %}active{% endif %}"><span class="nav-icon">🧩</span><span class="nav-label">Identification Rules</span></a>
+      <a href="{{ url_for('page_audit') }}" class="nav-item {% if active_page == 'audit' %}active{% endif %}"><span class="nav-icon">📜</span><span class="nav-label">Audit Log</span></a>
+      {% endif %}
+    </div>
+
+    <div class="sidebar-footer">
+      {% if user %}
+      <div class="eb-user">{{ user.full_name or user.username }}<br><span class="eb-muted">{{ user.role.replace('_', ' ').title() }}</span>
+        <form method="post" action="{{ url_for('page_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Sign out</button></form></div>
+      {% endif %}
+      Machine-read data — verify before acting
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+        <span class="ora-dot"></span>
+        <span class="ora-text topbar-reveal" id="ora-status-text">Oracle…</span>
+      </div>
+      <span class="topbar-divider"></span>
+      <span class="topbar-label topbar-reveal">Theme</span>
+      {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
+      <div class="theme-picker" id="theme-picker">
+        <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
+          <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+          <span id="theme-label-display" class="topbar-reveal">{{ bg_theme }}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
+          {% for t, icon, cls in _themes %}
+          <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
+            <span><span class="{{ cls }}">{{ icon }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+            <span>{{ t }}</span>
+          </div>
+          {% endfor %}
+          <div class="theme-picker-foot">
+            <label class="theme-toggle"><input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)"> Auto (by time of day)</label>
+            <label class="theme-toggle"><input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)"> Animation</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}
+        <div class="alert alert-{{ 'error' if cat == 'error' else 'success' if cat == 'success' else 'info' }}" data-auto>{{ m }}</div>
+      {% endfor %}{% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/eb.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+  setTimeout(function () {
+    document.querySelectorAll(".topbar-reveal").forEach(function (el) { el.classList.add("show"); });
+  }, 420);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

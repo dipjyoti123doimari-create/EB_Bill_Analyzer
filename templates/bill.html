@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Bill #{{ e.id }}{% endblock %}
+{% block content %}
+{% set plant = (bill.plant_code if bill else None) %}
+<div class="page-header"><h1>Bill viewer — extraction #{{ e.id }}</h1>
+  <p>{{ e.discom_code or 'Electricity board not identified' }}{% if e.state %} · {{ e.state }}{% endif %}{% if plant %} · plant <a href="{{ url_for('page_plant', code=plant) }}" style="color:#fff;text-decoration:underline">{{ plant }}</a>{% endif %}
+     {% if bill and bill.billing_month %} · {{ bill.billing_month }}{% endif %}</p></div>
+
+<div class="btn-group" style="margin-bottom:12px">
+  <span class="badge {{ BILL_BADGE[e.bill_status] }}" style="font-size:12px">{{ e.bill_status.replace('_', ' ') }}</span>
+  <span class="eb-muted">source: {{ 'Oracle EBS' if e.attachment_id else 'manual upload' }} · {{ e.doc_kind or '?' }} · {{ e.pages or '?' }} page(s){% if e.ocr_pages %} · {{ e.ocr_pages }} read by OCR (mean confidence {{ '%.0f' % ((e.mean_ocr_conf or 0) * 100) }}%){% endif %} · reader {{ e.reader_version }}</span>
+  {% if can_correct %}
+  <span style="margin-left:auto"></span>
+  <button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_retry', ext_id=e.id) }}" data-confirm="Read this document again? The current reading and its corrections stay in the history.">↻ Retry extraction</button>
+  <button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_verify', ext_id=e.id) }}" data-fields="{% for k, f in fields.items() if f.verification_status in ('NEEDS_REVIEW',) and f.status in ('FOUND','ZERO') %}field={{ k }}{% if not loop.last %}&{% endif %}{% endfor %}" data-confirm="Mark every value that is flagged for review as checked against the original bill?" data-reload>✔ Verify all flagged values</button>
+  {% endif %}
+  {% if is_admin and e.bill_status in ('FAILED','UNSUPPORTED','DUPLICATE','NOT_A_BILL') %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_resolve', ext_id=e.id) }}" data-prompt="Why can this be closed?" data-reload>Mark resolved</button>{% endif %}
+</div>
+
+{% if e.error %}<div class="alert alert-error">{{ e.error }}</div>{% endif %}
+{% for w in warnings %}<div class="alert alert-warning">{{ w }}</div>{% endfor %}
+{% if e.resolved_at %}<div class="alert alert-info">Resolved by {{ e.resolved_by }} on {{ e.resolved_at }}: {{ e.resolution_note }}</div>{% endif %}
+{% if e.bill_status != 'VERIFIED' and e.bill_status in ('NEEDS_REVIEW','PARTIAL') %}<div class="eb-banner">This bill has <b>not</b> been verified. Values below are what the reader found; check them against the original on the left. Nothing here is final until a person verifies or corrects it.</div>{% endif %}
+
+<div class="eb-split">
+  <div class="eb-doc card">
+    <div class="btn-group" style="margin-bottom:8px">
+      <b>Original bill</b>{% if doc_name %}<span class="eb-muted">{{ doc_name }}</span>{% endif %}
+      <span style="margin-left:auto"></span>
+      {% if has_original %}<label style="margin:0">Page <input type="number" id="pg" min="1" max="{{ pages or 1 }}" value="1" style="width:64px;display:inline-block"></label>
+      <button class="btn btn-secondary btn-sm" onclick="showOriginal()">Original</button>{% endif %}
+    </div>
+    {% if has_original %}
+      <div id="docbox"><img class="evidence" id="docframe" src="{{ url_for('page_image', ext_id=e.id, n=1) }}" alt="Original bill, page 1"></div>
+      <div class="eb-note" id="evnote">The page is drawn from the stored original. <a href="{{ url_for('file_original', ext_id=e.id) }}" target="_blank" rel="noopener">Open the original file in a new tab</a></div>
+    {% else %}<div class="glass-card"><h3>Original not available</h3><p>The stored file could not be found.</p></div>{% endif %}
+  </div>
+
+  <div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tabset="b" data-tab="fields">Extracted data</button>
+      <button class="tab-btn" data-tabset="b" data-tab="analysis">PF &amp; demand analysis</button>
+      <button class="tab-btn" data-tabset="b" data-tab="charges">Charges &amp; basis</button>
+      <button class="tab-btn" data-tabset="b" data-tab="problems">Problems ({{ flags|length + missing|length }})</button>
+      <button class="tab-btn" data-tabset="b" data-tab="history">History</button>
+    </div>
+
+    <div class="tab-panel active" data-tabpanel="b" data-tab="fields">
+      <div class="card"><div class="eb-scroll"><table class="eb-table eb-field">
+        <thead><tr><th>Field</th><th>Value</th><th>Conf.</th><th>Status</th><th></th></tr></thead><tbody>
+        {% for name, label, kind, units in CORRECTABLE %}{% set f = fields.get(name) or (fields.get('pf') if name == 'pf_billed' else none) %}
+          <tr class="eb-fieldrow" id="row-{{ name }}">
+            <td class="wrap" style="min-width:150px"><b>{{ label }}</b>{% if f and f.original_label %}<div class="eb-evidence">on the bill: “{{ f.original_label[:48] }}”</div>{% endif %}</td>
+            <td class="wrap" style="min-width:90px">{% if f and f.status in ('FOUND','ZERO','CALCULATED') %}<b id="val-{{ name }}">{{ f.value_text }}</b> {{ f.unit_normalized or '' }}{% if f.status == 'ZERO' %} <span class="badge badge-muted">zero on bill</span>{% endif %}
+                {% elif f %}<span class="badge badge-muted">{{ f.status.replace('_', ' ').title() }}</span>{% else %}<span class="badge badge-muted">Not found</span>{% endif %}</td>
+            <td class="eb-conf {{ 'low' if f and f.confidence is not none and f.confidence < 0.95 else 'ok' if f and f.confidence is not none else '' }}">{{ ('%.2f' % f.confidence) if f and f.confidence is not none else '' }}</td>
+            <td>{% if f %}<span class="badge {{ 'badge-green' if f.verification_status in ('VERIFIED','CORRECTED') else 'badge-amber' if f.verification_status == 'NEEDS_REVIEW' else 'badge-muted' }}">{{ f.verification_status.replace('_', ' ').title() }}</span>{% endif %}</td>
+            <td style="white-space:nowrap">
+              {% if f and f.bbox_json and f.page and has_original %}<button class="btn btn-secondary btn-icon" title="Show where this was read: {{ (f.evidence or '')[:160] }}" onclick="showEvidence('{{ f.field_name }}', {{ f.page }})">🔍</button>{% endif %}
+              {% if can_correct %}<button class="btn btn-secondary btn-icon" title="Correct this value" onclick="editField('{{ name }}')">✎</button>{% endif %}
+            </td></tr>
+          {% if f and f.evidence %}<tr><td colspan="5" class="eb-evidence" style="border-top:none;padding-top:0">{{ f.evidence[:170] }} · {{ f.method }}{% if f.page %} · p{{ f.page }}{% endif %}{% if f.extracted_value_text and f.verification_status == 'CORRECTED' %} · <b>originally read as {{ f.extracted_value_text }}</b>{% endif %}</td></tr>{% endif %}
+        {% endfor %}
+        </tbody></table></div>
+        <div class="eb-note">“Not found” and “unreadable” are different from zero. A calculated value (billing days, PF from kWh/kVAh) is shown for comparison and never replaces the value printed on the bill.</div>
+      </div>
+
+      {% if can_correct %}
+      <div class="card" id="editor"><div class="section-title">Correct a value</div>
+        <form class="form-grid" onsubmit="return saveCorrection(this)">
+          <div class="form-group"><label>Field</label><select name="field" id="ed-field" onchange="syncUnits()">
+            {% for name, label, kind, units in CORRECTABLE %}<option value="{{ name }}" data-units="{{ units|join(',') if units else '' }}" data-kind="{{ kind }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="form-group"><label>Correct value <span class="eb-muted" id="ed-hint"></span></label><input type="text" name="value" id="ed-value" required></div>
+          <div class="form-group" id="ed-unit-wrap" style="display:none"><label>Unit as printed on the bill</label><select name="unit" id="ed-unit"></select></div>
+          <div class="form-group"><label>Reason / note</label><input type="text" name="reason" maxlength="300" placeholder="e.g. misread by OCR"></div>
+          <div style="grid-column:1/-1"><button class="btn btn-primary" type="submit">Save correction</button> <span class="eb-note" style="margin-left:10px">The extracted value stays in the history; nothing is retrained automatically.</span></div>
+        </form></div>
+      {% endif %}
+    </div>
+
+    <div class="tab-panel" data-tabpanel="b" data-tab="analysis">
+      {% if pf %}
+      <div class="card"><div class="section-title">Power factor</div>
+        <dl class="eb-kv">
+          <dt>PF as per bill</dt><dd>{{ pf.pf_billed | pf }}{% if pf.direction %} · {{ pf.direction }}{% endif %}</dd>
+          <dt>PF calculated (kWh ÷ kVAh)</dt><dd>{{ pf.pf_calculated | pf }}</dd>
+          <dt>Difference (bill − calculated)</dt><dd>{{ pf.pf_difference if pf.pf_difference is not none else '—' }}</dd>
+          <dt>Validation</dt><dd><span class="badge {{ 'badge-green' if pf.validation_status == 'MATCH' else 'badge-amber' if pf.validation_status in ('MISMATCH','INVALID_ENERGY') else 'badge-muted' }}">{{ pf.validation_status.replace('_', ' ') }}</span></dd>
+          <dt>Management status</dt><dd><span class="badge {{ PF_BADGE[pf.performance_status] }}">{{ pf.performance_status.title() }}</span> <span class="eb-muted">internal monitoring band, not a tariff threshold</span></dd>
+        </dl></div>
+      <div class="card"><div class="section-title">Actual penalty / incentive printed on the bill <span class="kpi-tag actual">ACTUAL</span></div>
+        <dl class="eb-kv">
+          <dt>PF penalty</dt><dd>{% if bill.pf_penalty_status == 'UNREADABLE' %}<span class="badge badge-amber">amount unreadable</span>{% elif bill.pf_penalty is not none %}₹ {{ bill.pf_penalty | inr }}{% else %}not found{% endif %}</dd>
+          <dt>PF incentive / rebate</dt><dd>{{ ('₹ ' ~ (bill.pf_incentive | inr)) if bill.pf_incentive is not none else 'not found' }}</dd>
+          <dt>Expected by an approved tariff rule</dt><dd>{{ ('₹ ' ~ (pf.expected_pf_penalty | inr)) if pf.expected_pf_penalty is not none else '—' }} <span class="badge badge-muted">{{ pf.expected_status.replace('_', ' ') }}</span>{% if pf.expected_vs_bill is not none %} (bill − expected = {{ pf.expected_vs_bill | inr }}){% endif %}</dd>
+        </dl></div>
+      <div class="card" style="border-style:dashed"><div class="section-title">Theoretical kVAh saving <span class="kpi-tag theory">THEORETICAL</span></div>
+        <dl class="eb-kv">
+          <dt>Billing basis</dt><dd>{{ pf.billing_basis }}</dd>
+          <dt>Status</dt><dd><span class="badge badge-muted">{{ pf.savings_status.replace('_', ' ') }}</span></dd>
+          {% if pf.current_kvah is not none %}<dt>Current kVAh (kWh ÷ PF)</dt><dd>{{ pf.current_kvah | num(2) }}</dd>
+          <dt>Target kVAh (kWh ÷ {{ pf.target_pf }})</dt><dd>{{ pf.target_kvah | num(2) }}</dd><dt>Potential reduction</dt><dd>{{ pf.kvah_reduction | num(2) }} kVAh</dd>{% endif %}
+          {% if pf.marginal_rate is not none %}<dt>Rate used</dt><dd>₹ {{ pf.marginal_rate }} / kVAh <span class="eb-muted">({{ pf.rate_source.replace('_', ' ').lower() }})</span></dd>
+          <dt>Estimated saving</dt><dd><b>₹ {{ pf.estimated_savings | inr }}</b> <span class="eb-muted">— not a billed amount, not a penalty</span></dd>{% endif %}
+        </dl></div>
+      {% for n in (pf.notes_json | fromjson) %}<div class="eb-note">• {{ n }}</div>{% endfor %}
+      {% endif %}
+      {% if dem %}
+      <div class="card"><div class="section-title">Demand</div>
+        <dl class="eb-kv">
+          <dt>Contract demand</dt><dd>{{ (dem.contract_demand | num(2) ~ ' ' ~ (dem.contract_demand_unit or 'unit not recorded')) if dem.contract_demand is not none else 'not found' }}</dd>
+          <dt>Maximum recorded demand</dt><dd>{{ (dem.max_demand | num(2) ~ ' ' ~ (dem.max_demand_unit or 'unit not recorded')) if dem.max_demand is not none else 'not found' }}</dd>
+          <dt>Billing demand</dt><dd>{{ (dem.billing_demand | num(2)) if dem.billing_demand is not none else 'not found' }} <span class="eb-muted">(separate from the two above)</span></dd>
+          <dt>Comparison</dt><dd><span class="badge badge-muted">{{ dem.comparison_status.replace('_', ' ') }}</span> {{ ('utilisation ' ~ (dem.utilization_pct | pct)) if dem.utilization_pct is not none else '' }}</dd>
+          <dt>Above contract demand</dt><dd>{{ 'yes' if dem.exceeds_contract else 'no' if dem.exceeds_contract is not none else '—' }}{% if dem.excess_demand %} (by {{ dem.excess_demand }}){% endif %}</dd>
+          <dt>Violation (per tariff rule)</dt><dd><span class="badge {{ 'badge-red' if dem.violation_status.startswith('VIOLATION') else 'badge-muted' }}">{{ dem.violation_status.replace('_', ' ') }}</span>{% if dem.tolerance_pct is not none %} permitted tolerance {{ dem.tolerance_pct }}%{% endif %}</dd>
+          <dt>Actual excess-demand penalty <span class="kpi-tag actual">ACTUAL</span></dt><dd>{% if bill.excess_demand_status == 'UNREADABLE' %}<span class="badge badge-amber">amount unreadable</span>{% elif dem.actual_excess_penalty is not none %}₹ {{ dem.actual_excess_penalty | inr }}{% else %}not found{% endif %}</dd>
+          <dt>Expected by an approved rule</dt><dd>{{ ('₹ ' ~ (dem.expected_excess_penalty | inr)) if dem.expected_excess_penalty is not none else '—' }} <span class="badge badge-muted">{{ dem.expected_status.replace('_', ' ') }}</span></dd>
+        </dl></div>
+      {% for n in (dem.notes_json | fromjson) %}<div class="eb-note">• {{ n }}</div>{% endfor %}
+      {% endif %}
+      {% if not pf and not dem %}<div class="glass-card"><h3>No analysis yet</h3><p>PF and demand analysis is produced for bills that were read successfully.</p></div>{% endif %}
+    </div>
+
+    <div class="tab-panel" data-tabpanel="b" data-tab="charges">
+      <div class="card"><div class="section-title">Billing basis: <span class="badge badge-purple">{{ e.billing_basis or 'Unknown' }}</span> <span class="eb-muted">confidence {{ '%.2f' % (e.basis_confidence or 0) }}</span></div>
+        <div class="eb-note">Decided from the arithmetic of the energy charge (units × rate = amount, with units equal to metered kWh or kVAh) — not from the mere presence of both readings. “Unknown” is shown when this is ambiguous.</div>
+        {% if basis_ev.evidence and basis_ev.evidence.rows %}<div class="eb-scroll"><table class="eb-table"><thead><tr><th>Row</th><th class="num">Units</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>
+          {% for r in basis_ev.evidence.rows[:12] %}<tr><td class="wrap">{{ r.label }}</td><td class="num">{{ r.units }}</td><td class="num">{{ r.rate }}</td><td class="num">{{ r.amount }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+        {% if can_correct %}<form class="eb-inline-form" style="margin-top:8px" onsubmit="ebPost('{{ url_for('act_basis', ext_id=e.id) }}', new FormData(this), function(){ location.reload(); }); return false;">
+          <select name="basis"><option>kWh</option><option>kVAh</option><option>Mixed</option><option>Unknown</option></select><input type="text" name="reason" placeholder="why (from the tariff section of the bill)"><button class="btn btn-secondary btn-sm">Set billing basis</button></form>{% endif %}</div>
+      <div class="card"><div class="section-title">Charges read from the bill</div>
+        <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Line on the bill</th><th>Category</th><th class="num">Amount ₹</th><th>Page</th></tr></thead><tbody>
+          {% for c in charge_lines %}<tr><td class="wrap">{{ c.label }}</td><td>{{ (c.category or '—').replace('_', ' ') }}</td><td class="num">{{ c.amount | inr }}</td><td>{{ c.page }}</td></tr>{% else %}<tr><td colspan="4" class="eb-muted">No charge lines were found.</td></tr>{% endfor %}</tbody></table></div></div>
+    </div>
+
+    <div class="tab-panel" data-tabpanel="b" data-tab="problems">
+      <div class="card">
+        {% if missing %}<div class="alert alert-warning">Missing: {{ missing | join(', ') }}</div>{% endif %}
+        {% for f in flags %}<div class="alert alert-warning">{{ f }}</div>{% endfor %}
+        {% if po_check and po_check.flags %}{% for f in po_check.flags %}<div class="alert alert-warning">{{ f }}</div>{% endfor %}{% endif %}
+        {% if not (missing or flags or (po_check and po_check.flags)) %}<div class="eb-muted">No problems recorded.</div>{% endif %}
+        {% if po %}<div class="section-title" style="margin-top:12px">Purchase order</div><dl class="eb-kv"><dt>PO number</dt><dd>{{ po.po_number }}</dd><dt>Supplier</dt><dd>{{ po.supplier_name }}</dd><dt>Plant</dt><dd>{{ po.plant_code }} — {{ po.plant_name }}</dd><dt>Billing period on the PO</dt><dd>{{ po.billing_start or '—' }} → {{ po.billing_end or '—' }}</dd><dt>Consumer hint on the PO</dt><dd>{{ po.consumer_hint or '—' }}</dd></dl>{% endif %}
+        {% if same_period|length > 1 %}<div class="section-title" style="margin-top:12px">Other bills for the same account and month</div>
+          {% for s in same_period %}<div><a href="{{ url_for('page_extraction', ext_id=s.extraction_id) }}">Bill {{ s.bill_number or s.id }}</a> {{ s.bill_date or '' }} <span class="badge {{ BILL_BADGE[s.bill_status] }}">{{ s.bill_status }}</span>{% if s.is_primary %} <span class="badge badge-green">counted in totals</span>{% endif %}</div>{% endfor %}{% endif %}
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tabpanel="b" data-tab="history">
+      <div class="card"><div class="section-title">Corrections</div>
+        {% for c in corrections %}<div style="margin:6px 0"><b>{{ c.field_name }}</b>: {{ c.original_value if c.original_value is not none else 'not found' }} → <b>{{ c.corrected_value }}</b> {{ c.corrected_unit or '' }} <span class="eb-muted">by {{ c.corrected_by }} on {{ c.corrected_at }}{% if c.reason %} — {{ c.reason }}{% endif %} · regression set: {{ c.regression_status.lower() }}</span></div>
+        {% else %}<div class="eb-muted">No corrections.</div>{% endfor %}</div>
+      <div class="card"><div class="section-title">Readings of this document</div>
+        {% for o in others %}<div><a href="{{ url_for('page_extraction', ext_id=o.id) }}">#{{ o.id }}</a> {{ o.created_at }} · {{ o.reader_version.split('#')[0] }} · <span class="badge {{ BILL_BADGE[o.bill_status] }}">{{ o.bill_status }}</span>{% if o.archived %} <span class="badge badge-muted">archived (earlier reading)</span>{% endif %}</div>{% endfor %}</div>
+      <div class="card"><div class="section-title">Audit trail</div>
+        {% for a in audits %}<div class="eb-note" style="margin:3px 0">{{ a.ts }} · {{ a.username }} · <b>{{ a.action }}</b> · {{ a.details_json[:160] }}</div>{% else %}<div class="eb-muted">Nothing recorded.</div>{% endfor %}</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var EXT = {{ e.id }}, DOC_PDF = {{ 'true' if e.doc_kind == 'pdf' else 'false' }};
+function showOriginal() {
+  var p = document.getElementById('pg').value || 1, box = document.getElementById('docbox');
+  box.innerHTML = '<img class="evidence" id="docframe" src="/e/' + EXT + '/page/' + p + '.png" alt="Original bill, page ' + p + '">';
+  document.getElementById('evnote').innerHTML = 'The page is drawn from the stored original. <a href="/e/' + EXT + '/file" target="_blank" rel="noopener">Open the original file in a new tab</a>';
+}
+document.addEventListener('DOMContentLoaded', function () { var pg = document.getElementById('pg'); if (pg) pg.addEventListener('change', showOriginal); });
+function showEvidence(field, page) {
+  document.getElementById('pg').value = page;
+  fetch('/e/' + EXT + '/page/' + page + '.png?field=' + encodeURIComponent(field)).then(function (r) {
+    if (!r.ok) throw new Error('could not draw the page');
+    var note = r.headers.get('X-Evidence-Note') || '';
+    return r.blob().then(function (b) { return [URL.createObjectURL(b), note]; });
+  }).then(function (x) {
+    document.getElementById('docbox').innerHTML = '<img class="evidence" id="docframe" src="' + x[0] + '" alt="Page with the value highlighted">';
+    document.getElementById('evnote').textContent = x[1] || 'The value is highlighted in yellow/red.';
+  }).catch(function (e) { showToast(e.message, 'error'); });
+}
+function syncUnits() {
+  var o = document.getElementById('ed-field').selectedOptions[0], units = (o.dataset.units || '').split(',').filter(Boolean);
+  var wrap = document.getElementById('ed-unit-wrap'), sel = document.getElementById('ed-unit');
+  wrap.style.display = units.length ? '' : 'none'; sel.innerHTML = '';
+  units.forEach(function (u) { sel.innerHTML += '<option>' + u + '</option>'; });
+  var k = o.dataset.kind; document.getElementById('ed-hint').textContent = k === 'date' ? '(YYYY-MM-DD or as printed)' : k === 'daterange' ? '(two dates, e.g. 01-09-2026 to 30-09-2026)' : k === 'number' ? '(number)' : '';
+}
+function editField(name) {
+  var s = document.getElementById('ed-field'); if (!s) return;
+  s.value = name; syncUnits();
+  var v = document.getElementById('val-' + name); document.getElementById('ed-value').value = v ? v.textContent.trim() : '';
+  document.getElementById('editor').scrollIntoView({ behavior: 'smooth' }); document.getElementById('ed-value').focus();
+}
+function saveCorrection(form) {
+  ebPost('/e/' + EXT + '/correct', new FormData(form), function () { setTimeout(function () { location.reload(); }, 600); });
+  return false;
+}
+document.addEventListener('DOMContentLoaded', function () { if (document.getElementById('ed-field')) syncUnits(); });
+</script>
+{% endblock %}

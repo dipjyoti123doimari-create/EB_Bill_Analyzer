@@ -1,0 +1,73 @@
+{% macro ms(name, label, options, selected) -%}
+<div class="form-group"><label>{{ label }}</label>
+  <div class="ms-wrap">
+    <div class="ms-box" tabindex="0"><span class="ms-label placeholder">All</span><span class="ms-arrow">▾</span></div>
+    <div class="ms-panel">
+      <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+      <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select all</label></div>
+      <div class="ms-opts">{% for v, t in options %}<label><input type="checkbox" name="{{ name }}" value="{{ v }}" {% if v in selected %}checked{% endif %}> {{ t }}</label>{% endfor %}</div>
+    </div>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro filter_bar(opts, f, action, show='period,state,discom,plant,basis,pf_status,exception,quality,q', period='') -%}
+<form method="get" action="{{ action }}" class="card eb-filter">
+  <div class="filter-grid">
+    {% if 'period' in show %}
+    <div class="form-group"><label>Period</label>
+      <select name="period">
+        {% for v, t in [('', 'All periods'), ('current', 'Current month'), ('previous', 'Previous month'), ('last3', 'Last 3 months'), ('last6', 'Last 6 months'), ('last12', 'Last 12 months'), ('custom', 'Custom range')] %}
+        <option value="{{ v }}" {% if (period or request.args.get('period', '')) == v %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select></div>
+    <div class="form-group"><label>From month</label><input type="month" name="month_from" value="{{ f.month_from or '' }}"></div>
+    <div class="form-group"><label>To month</label><input type="month" name="month_to" value="{{ f.month_to or '' }}"></div>
+    {% endif %}
+    {% if 'ym' in show %}
+    <div class="form-group"><label>Year</label><select name="year"><option value="">Any</option>{% for y in opts.years %}<option value="{{ y }}" {% if request.args.get('year') == y %}selected{% endif %}>{{ y }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Month</label><select name="month"><option value="">Any</option>{% for n in range(1, 13) %}<option value="{{ n }}" {% if request.args.get('month') == n|string %}selected{% endif %}>{{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n - 1] }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if 'state' in show %}{{ ms('state', 'State', opts.state_opts, f.states) }}{% endif %}
+    {% if 'discom' in show %}{{ ms('discom', 'Electricity board', opts.discom_opts, f.discoms) }}{% endif %}
+    {% if 'plant' in show %}{{ ms('plant', 'Plant', opts.plant_opts, f.plants) }}{% endif %}
+    {% if 'basis' in show %}
+    <div class="form-group"><label>Billing basis</label><select name="basis"><option value="">All</option>
+      {% for b in ['kWh', 'kVAh', 'Mixed', 'Unknown'] %}<option value="{{ b }}" {% if f.basis == b %}selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if 'pf_status' in show %}
+    <div class="form-group"><label>PF status</label><select name="pf_status"><option value="">All</option>
+      {% for b in ['EXCELLENT', 'GOOD', 'ATTENTION', 'CRITICAL', 'UNKNOWN'] %}<option value="{{ b }}" {% if f.pf_status == b %}selected{% endif %}>{{ b.title() }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if 'exception' in show %}
+    <div class="form-group"><label>Exception</label><select name="exception"><option value="">None selected</option>
+      {% for v, t in [('pf_below','PF below management target'), ('pf_critical','PF critical (<0.90)'), ('pf_penalty','Actual PF penalty'), ('demand_violation','Demand violation'), ('demand_above_contract','Demand above contract (any)'), ('excess_penalty','Actual excess-demand penalty'), ('needs_review','Needs review / partial'), ('missing_pf','PF missing'), ('pf_mismatch','PF inconsistent with kWh/kVAh'), ('penalty_unreadable','Penalty amount unreadable'), ('revised','Revised / multiple bills')] %}
+      <option value="{{ v }}" {% if f.exception == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if 'quality' in show %}
+    <div class="form-group"><label>Data</label><select name="quality">
+      <option value="all" {% if f.quality == 'all' %}selected{% endif %}>All machine-read bills</option>
+      <option value="verified" {% if f.quality == 'verified' %}selected{% endif %}>Verified by a person only</option></select></div>
+    {% endif %}
+    {% if 'q' in show %}<div class="form-group"><label>Search</label><input type="text" name="q" value="{{ f.search or '' }}" placeholder="plant, consumer, bill or PO no."></div>{% endif %}
+  </div>
+  <div class="btn-group"><button class="btn btn-primary btn-sm" type="submit">Apply filters</button><a class="btn btn-secondary btn-sm" href="{{ action }}">Reset</a></div>
+</form>
+{%- endmacro %}
+
+{% macro pager(page, pages) -%}
+{% if pages > 1 %}<div class="pager">Page {{ page }} of {{ pages }}
+  {% if page > 1 %}<a href="?{{ qs(page=page - 1) }}">‹ Prev</a>{% endif %}
+  {% for p in range([1, page - 2]|max, [pages, page + 2]|min + 1) %}{% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="?{{ qs(page=p) }}">{{ p }}</a>{% endif %}{% endfor %}
+  {% if page < pages %}<a href="?{{ qs(page=page + 1) }}">Next ›</a>{% endif %}</div>{% endif %}
+{%- endmacro %}
+
+{% macro badge(text, cls) -%}<span class="badge {{ cls }}">{{ text }}</span>{%- endmacro %}
+
+{% macro kpi(label, value, sub='', cls='', tag='', href='') -%}
+<div class="kpi-card {{ cls }}">
+  <div class="kpi-label">{{ label }}{% if tag == 'actual' %}<span class="kpi-tag actual">ACTUAL</span>{% elif tag == 'theory' %}<span class="kpi-tag theory">THEORETICAL</span>{% endif %}</div>
+  <div class="kpi-value">{% if href %}<a href="{{ href }}" style="color:inherit;text-decoration:none">{{ value }}</a>{% else %}{{ value }}{% endif %}</div>
+  <div class="kpi-sub">{{ sub }}</div>
+</div>
+{%- endmacro %}
+

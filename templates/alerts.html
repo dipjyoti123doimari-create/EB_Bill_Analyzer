@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Alerts</h1>
+  <p>Each alert appears once and is updated while the condition lasts. It resolves itself when the bill is corrected, or you can acknowledge / resolve it. E-mails are sent once per alert (see Settings for repeats and escalation).</p></div>
+
+<div class="card eb-filter"><form method="get" class="eb-inline-form">
+  <select name="status">{% for s in ['OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'ALL'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s.title() }}</option>{% endfor %}</select>
+  <select name="severity"><option value="">Any severity</option>{% for s in ['CRITICAL', 'WARNING', 'INFO'] %}<option value="{{ s }}" {% if sev == s %}selected{% endif %}>{{ s.title() }}</option>{% endfor %}</select>
+  <select name="type"><option value="">Any type</option>{% for t in types %}<option value="{{ t }}" {% if typ == t %}selected{% endif %}>{{ t.replace('_', ' ').title() }}</option>{% endfor %}</select>
+  <button class="btn btn-primary btn-sm">Filter</button> <span class="eb-muted">{{ rows|length }} shown</span></form></div>
+
+<div class="card">
+{% for a in rows %}
+  <div class="sevbar {{ a.severity }}" style="margin:0 0 14px;padding:4px 0 4px 12px">
+    <div><span class="badge {{ SEV_BADGE[a.severity] }}">{{ a.severity }}</span> <span class="badge badge-muted">{{ a.alert_type.replace('_', ' ') }}</span>
+      <b>{{ a.title }}</b>
+      <span class="eb-muted" style="float:right">{{ a.plant_code or '' }} · first {{ a.first_seen[:16] }} · seen {{ a.occurrences }}× · {{ a.status.title() }}{% if a.email_count %} · e-mailed {{ a.email_count }}×{% endif %}{% if a.escalation_level %} · escalated{% endif %}</span></div>
+    <div class="eb-note" style="margin:3px 0">{{ a.message }}</div>
+    {% if a.required_action %}<div class="eb-note" style="margin:0"><b>Action:</b> {{ a.required_action }}</div>{% endif %}
+    <div style="margin-top:6px" class="btn-group">
+      {% if a.bill_id %}<a class="btn btn-secondary btn-sm" href="{{ url_for('page_bill_redirect', bill_id=a.bill_id) }}">Open bill</a>{% elif a.extraction_id %}<a class="btn btn-secondary btn-sm" href="{{ url_for('page_extraction', ext_id=a.extraction_id) }}">Open</a>{% endif %}
+      {% if a.status == 'OPEN' %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_alert_ack', alert_id=a.id) }}" data-reload>Acknowledge</button>{% endif %}
+      {% if is_admin and a.status != 'RESOLVED' %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_alert_resolve', alert_id=a.id) }}" data-prompt="Resolution note" data-reload>Resolve</button>{% endif %}
+      {% if a.status == 'ACKNOWLEDGED' %}<span class="eb-muted">acknowledged by {{ a.acknowledged_by }} {{ a.acknowledged_at[:16] if a.acknowledged_at }}</span>{% endif %}
+      {% if a.status == 'RESOLVED' %}<span class="eb-muted">resolved {{ a.resolved_at[:16] if a.resolved_at }} by {{ a.resolved_by }}: {{ a.resolution_note }}</span>{% endif %}
+    </div>
+  </div>
+{% else %}<div class="eb-muted">No alerts match.</div>{% endfor %}
+</div>
+
+{% if is_admin %}<div class="card" style="margin-top:14px"><div class="section-title">Recent e-mails</div>
+  <div class="eb-note">Alert e-mails are {{ 'ON' if cfg.alert_email_enabled else 'OFF' }}; recipients: {{ cfg.alert_email_to or 'none configured' }}. Change this in <a href="{{ url_for('page_settings') }}">Settings</a>.</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>When</th><th>Kind</th><th>To</th><th>Subject</th><th>Status</th><th>Error</th></tr></thead><tbody>
+  {% for m in mail %}<tr><td>{{ m.created_at }}</td><td>{{ m.kind }}</td><td class="wrap">{{ m.recipients }}</td><td class="wrap">{{ m.subject }}</td><td><span class="badge {{ 'badge-green' if m.status == 'SENT' else 'badge-red' }}">{{ m.status }}</span></td><td class="wrap">{{ m.error or '' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="eb-muted">No e-mail has been sent.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% endblock %}

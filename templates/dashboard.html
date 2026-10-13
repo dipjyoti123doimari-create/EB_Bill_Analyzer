@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import filter_bar, kpi %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header"><h1>Electricity Intelligence</h1>
+  <p>Power factor, contract demand, actual penalties and theoretical savings across plants — {{ plabel }}.</p></div>
+
+{{ filter_bar(opts, f, url_for('page_dashboard'), show='period,state,discom,plant,quality', period=period) }}
+
+{% if k.bills == 0 %}
+<div class="glass-card"><h3>No bills in this selection</h3><p>Nothing has been read for this period / filter yet. Bills arrive from the 2-hourly Oracle scan, or use <b>Upload Bill</b>.</p></div>
+{% else %}
+{% if k.unverified %}
+<div class="eb-banner"><b>{{ k.unverified }} of {{ k.bills }} bills in this view are machine-read and have not been checked by a person.</b>
+  Figures below are exactly what was read from the bills. {% if k.pairs_excluded or k.cost_excluded %}{{ k.pairs_excluded }} bill(s) with contradictory kWh/kVAh and {{ k.cost_excluded }} with contradictory amounts are left out of PF and cost totals. {% endif %}
+  Use <a href="{{ url_for('page_review') }}" style="color:inherit;text-decoration:underline">Review &amp; Exceptions</a> to verify, or switch <i>Data</i> to “Verified by a person only”.</div>
+{% endif %}
+
+<div class="kpi-grid-5">
+  {{ kpi('Plants monitored', k.plants, 'of ' ~ k.plants_total_known ~ ' plants with electricity POs', href=url_for('page_monitor')) }}
+  {{ kpi('Bills processed', k.bills, k.unverified ~ ' not yet verified · ' ~ k.failed_total ~ ' failed to read') }}
+  {{ kpi('Overall average PF', (k.overall_pf | pf) if k.overall_pf else '—', ('Energy-weighted kWh ÷ kVAh over ' ~ k.pair_bills ~ ' bills') ~ ((' · simple mean of billed PFs ' ~ (k.mean_billed_pf | pf)) if k.mean_billed_pf else '')) }}
+  {{ kpi('Plants with low PF', k.plants_low_pf, 'below ' ~ k.pf_targets.good ~ ' · ' ~ k.plants_critical_pf ~ ' critical (< ' ~ k.pf_targets.attention ~ ') · of ' ~ k.plants_with_pf ~ ' with PF', 'warn' if k.plants_low_pf else '') }}
+  {{ kpi('Contract demand violations', k.violations ~ ' + ' ~ k.violations_billed, 'tariff-rule violations + penalties billed by the board · ' ~ k.above_cd_unverified ~ ' bill(s) above contract with no approved rule (not confirmed)', 'bad' if (k.violations or k.violations_billed) else '') }}
+  {{ kpi('Total PF penalty', '₹ ' ~ (k.pf_penalty | inr(0)), k.pf_penalty_bills ~ ' bill(s) · ' ~ k.pf_penalty_unreadable ~ ' line(s) with unreadable amount', 'bad' if k.pf_penalty else '', 'actual') }}
+  {{ kpi('Total excess-demand penalty', '₹ ' ~ (k.xd_penalty | inr(0)), k.xd_bills ~ ' bill(s) · ' ~ k.xd_unreadable ~ ' line(s) with unreadable amount', 'bad' if k.xd_penalty else '', 'actual') }}
+  {{ kpi('PF improvement savings', '₹ ' ~ (k.savings | inr(0)), 'if PF reached ' ~ k.pf_targets.target ~ ' on ' ~ k.savings_bills ~ ' kVAh-billed bill(s) · not a billed amount' ~ (' · ' ~ k.savings_unverified ~ ' from unverified bills' if k.savings_unverified else ''), 'est', 'theory') }}
+  {{ kpi('Bills needing verification', k.needs_review_total, 'needs review or partially read (all periods)', 'warn' if k.needs_review_total else '', href=url_for('page_review')) }}
+  {{ kpi('Last successful Oracle scan', (k.last_scan.finished_at[:16] if k.last_scan else '—'), ((k.last_scan.mode ~ ' scan') if k.last_scan else 'no successful scan yet'), href=(url_for('page_automation') if is_admin else '')) }}
+</div>
+
+<div class="eb-row">
+  <div class="card"><div class="section-title">Monthly power factor (energy-weighted)</div><div id="ch-pf" class="eb-chart" style="height:230px"></div>
+    <div class="eb-note">PF = Σ kWh ÷ Σ kVAh of plausible bills; months with no usable pair fall back to the mean of billed PFs. Dashed lines: target {{ k.pf_targets.target }} and “good” {{ k.pf_targets.good }}.</div></div>
+  <div class="card"><div class="section-title">Monthly electricity cost (₹ lakh)</div><div id="ch-cost" class="eb-chart" style="height:230px"></div>
+    <div class="eb-note">Month-on-month: <span id="mom"></span></div></div>
+</div>
+<div class="eb-row" style="margin-top:14px">
+  <div class="card"><div class="section-title">Actual penalties by month (₹)</div><div id="ch-pen" class="eb-chart" style="height:210px"></div></div>
+  <div class="card"><div class="section-title">State-wise PF</div><div id="ch-state" class="eb-chart" style="height:210px"></div></div>
+</div>
+
+<div class="eb-row" style="margin-top:14px">
+  <div class="card"><div class="section-title">Worst performing plants (lowest PF)</div>
+    <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Plant</th><th>State</th><th class="num">PF</th><th>Method</th><th class="num">Bills</th></tr></thead><tbody>
+    {% for p in d.worst[:8] %}<tr><td><a href="{{ url_for('page_plant', code=p.plant_code) }}">{{ p.plant_code }}</a> {{ p.plant_name or '' }}</td><td>{{ p.state or '—' }}</td><td class="num">{{ p.pf | pf }}</td><td class="eb-muted">{{ p.pf_method }}</td><td class="num">{{ p.bills }}</td></tr>
+    {% else %}<tr><td colspan="5" class="eb-muted">No PF data</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="section-title">Best performing plants (highest PF)</div>
+    <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Plant</th><th>State</th><th class="num">PF</th><th>Method</th><th class="num">Bills</th></tr></thead><tbody>
+    {% for p in d.best[:8] %}<tr><td><a href="{{ url_for('page_plant', code=p.plant_code) }}">{{ p.plant_code }}</a> {{ p.plant_name or '' }}</td><td>{{ p.state or '—' }}</td><td class="num">{{ p.pf | pf }}</td><td class="eb-muted">{{ p.pf_method }}</td><td class="num">{{ p.bills }}</td></tr>
+    {% else %}<tr><td colspan="5" class="eb-muted">No PF data</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+<div class="eb-row" style="margin-top:14px">
+  <div class="card"><div class="section-title">State-wise performance</div>
+    <div class="eb-scroll"><table class="eb-table"><thead><tr><th>State</th><th class="num">Bills</th><th class="num">Plants</th><th class="num">PF</th><th class="num">PF penalty ₹</th><th class="num">Excess-demand ₹</th><th class="num">Violations</th></tr></thead><tbody>
+    {% for s in d.states %}<tr><td>{{ s.grp }}</td><td class="num">{{ s.bills }}</td><td class="num">{{ s.plants }}</td><td class="num">{{ s.pf | pf }}</td><td class="num">{{ s.pf_penalty | inr(0) }}</td><td class="num">{{ s.xd_penalty | inr(0) }}</td><td class="num">{{ s.violations }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="section-title">Electricity-board-wise performance</div>
+    <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Board</th><th class="num">Bills</th><th class="num">Plants</th><th class="num">PF</th><th class="num">PF penalty ₹</th><th class="num">Excess-demand ₹</th><th class="num">Violations</th></tr></thead><tbody>
+    {% for s in d.boards %}<tr><td>{{ s.grp }}</td><td class="num">{{ s.bills }}</td><td class="num">{{ s.plants }}</td><td class="num">{{ s.pf | pf }}</td><td class="num">{{ s.pf_penalty | inr(0) }}</td><td class="num">{{ s.xd_penalty | inr(0) }}</td><td class="num">{{ s.violations }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:14px"><div class="section-title">Open alerts <a class="btn btn-secondary btn-sm" style="margin-left:auto" href="{{ url_for('page_alerts') }}">All alerts</a></div>
+  {% for a in recent %}<div class="sevbar {{ a.severity }}" style="margin:8px 0"><span class="badge {{ SEV_BADGE[a.severity] }}">{{ a.severity }}</span> <b>{{ a.title }}</b><div class="eb-note" style="margin:2px 0">{{ a.message }}</div></div>
+  {% else %}<div class="eb-muted">No open alerts.</div>{% endfor %}</div>
+
+<script id="dash-data" type="application/json">{{ {'monthly': d.monthly, 'states': d.states, 'target': k.pf_targets.target, 'good': k.pf_targets.good} | tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var el = document.getElementById('dash-data'); if (!el) return;
+  var D = JSON.parse(el.textContent), M = D.monthly, labels = M.map(function (m) { return m.month; });
+  ebLine(document.getElementById('ch-pf'), labels, [{ name: 'PF', values: M.map(function (m) { return m.pf; }) }],
+    { min: 0.5, max: 1.0, decimals: 3, lines: [{ value: D.target, label: 'target ' + D.target, color: '#34D399' }, { value: D.good, label: 'good ' + D.good, color: '#F59E0B' }] });
+  ebBars(document.getElementById('ch-cost'), labels, [{ name: 'Cost ₹ lakh', values: M.map(function (m) { return m.cost == null ? null : m.cost / 100000; }) }], { decimals: 1 });
+  ebBars(document.getElementById('ch-pen'), labels, [{ name: 'PF penalty', values: M.map(function (m) { return m.pf_penalty; }), color: '#F87171' },
+                                                      { name: 'Excess-demand penalty', values: M.map(function (m) { return m.xd_penalty; }), color: '#F59E0B' }], { decimals: 0 });
+  var S = D.states.filter(function (s) { return s.pf != null; });
+  ebBars(document.getElementById('ch-state'), S.map(function (s) { return s.grp; }), [{ name: 'PF', values: S.map(function (s) { return s.pf; }), color: '#00D4FF' }], { decimals: 2 });
+  var idx = -1; M.forEach(function (m, i) { if (m.cost_change_pct != null) idx = i; });
+  var msg = 'needs two months of data';
+  if (idx > 0) {
+    var a = M[idx], b = M[idx - 1];
+    msg = a.month + ': ' + (a.cost_change_pct >= 0 ? '+' : '') + a.cost_change_pct + '% vs ' + b.month + ' (' + a.bills + ' vs ' + b.bills + ' bills)';
+    if (a.bills < 0.7 * b.bills || a.bills > 1.3 * b.bills) msg += ' — the months do not have a similar number of bills (a month still being collected looks like a fall), so this change is not a like-for-like comparison';
+  }
+  document.getElementById('mom').textContent = msg;
+})();
+</script>
+{% endblock %}

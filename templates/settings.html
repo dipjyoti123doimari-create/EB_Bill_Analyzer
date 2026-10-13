@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Settings</h1><p>Everything here is stored in the application database. Changing a PF band or the target PF re-analyses every stored bill.</p></div>
+<form method="post" class="card"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% set groups = [
+    ('Power-factor monitoring (internal management bands — not electricity-board penalty thresholds)', ['pf_excellent', 'pf_good', 'pf_attention', 'target_pf', 'pf_tolerance', 'critical_confidence']),
+    ('Alerts and e-mail', ['alert_email_enabled', 'alert_email_to', 'alert_email_cc', 'alert_email_min_severity', 'alert_renotify_hours', 'escalation_hours', 'escalation_to', 'app_base_url', 'scheduler_failure_alert_after']),
+    ('Expected bills', ['missing_bill_default_days', 'missing_bill_grace_days']),
+    ('Scheduler', ['scheduler_enabled', 'scan_interval_minutes', 'reconcile_hour', 'download_batch', 'process_budget_minutes', 'backfill_from'])] %}
+  {% for title, keys in groups %}
+    <div class="section-title" style="margin-top:{{ '0' if loop.first else '22px' }}">{{ title }}</div>
+    <div class="form-grid">
+    {% for k in keys %}{% set d = defs[k] %}
+      <div class="form-group"><label>{{ d[2] }}</label>
+        {% if d[1].__name__ == 'bool' %}<label style="display:flex;gap:10px;align-items:center;font-weight:500"><input type="checkbox" class="toggle" name="{{ k }}" {% if cfg[k] %}checked{% endif %}> {{ 'On' if cfg[k] else 'Off' }}</label>
+        {% elif k == 'alert_email_min_severity' %}<select name="{{ k }}">{% for s in ['CRITICAL', 'WARNING', 'INFO'] %}<option {% if cfg[k] == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        {% else %}<input type="text" name="{{ k }}" value="{{ cfg[k] }}">{% endif %}</div>
+    {% endfor %}</div>
+  {% endfor %}
+  <div class="eb-note">Mail server: {{ smtp.host or 'not configured' }}:{{ smtp.port }} as {{ smtp.sender or '—' }} (password {{ smtp.password }}). It is read from the RDC-OPS mail settings; change it there. To send a test message use <a href="{{ url_for('page_automation') }}">Automation</a>.</div>
+  <div style="margin-top:14px"><button class="btn btn-primary" type="submit">Save settings</button></div>
+</form>
+{% endblock %}

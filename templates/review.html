@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager %}
+{% block title %}Review &amp; Exceptions{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Review &amp; Exceptions</h1>
+  <p>Bills that are not yet trustworthy: values to verify, missing fields, failed or unsupported documents. A bill is never auto-approved while a critical value is unresolved.</p></div>
+
+<div class="tabs">
+  {% for key, label in [('ACTIVE', 'Needs attention'), ('VERIFIED', 'Verified'), ('NEEDS_REVIEW', 'Needs review'), ('PARTIAL', 'Partially extracted'), ('FAILED', 'Extraction failed'), ('DUPLICATE', 'Duplicate'), ('UNSUPPORTED', 'Unsupported document'), ('NOT_A_BILL', 'Not a bill'), ('ALL', 'All')] %}
+  <a class="tab-btn {% if status == key %}active{% endif %}" href="?status={{ key }}">{{ label }}{% if key in counts %} <span class="badge-count" style="background:rgba(255,255,255,.12);color:#fff">{{ counts[key] }}</span>{% elif key == 'ACTIVE' %} <span class="badge-count">{{ (counts.get('NEEDS_REVIEW', 0) + counts.get('PARTIAL', 0) + counts.get('FAILED', 0) + counts.get('UNSUPPORTED', 0)) }}</span>{% endif %}</a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <form method="get" class="eb-inline-form" style="margin-bottom:10px"><input type="hidden" name="status" value="{{ status }}"><input type="text" name="q" value="{{ q }}" placeholder="plant, PO or board"><button class="btn btn-secondary btn-sm">Search</button> <span class="eb-muted">{{ total }} item(s)</span></form>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>#</th><th>Status</th><th>Plant</th><th>PO</th><th>Board</th><th>Source</th><th>Document</th><th class="wrap">Missing fields</th><th class="wrap">Low-confidence fields</th><th class="wrap">Problem</th><th></th></tr></thead><tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.id }}</td><td><span class="badge {{ BILL_BADGE[r.bill_status] }}">{{ r.bill_status.replace('_', ' ') }}</span>{% if r.resolved_at %} <span class="badge badge-muted">resolved</span>{% endif %}</td>
+      <td>{{ r.plant or '—' }}</td><td>{{ r.po or '—' }}</td><td>{{ r.discom_code or '—' }}</td><td>{{ r.source.replace('_', ' ').title() }}</td>
+      <td>{{ r.doc_kind or '—' }} · {{ r.pages or '?' }}p{% if r.ocr_pages %} · OCR{% endif %}</td>
+      <td class="wrap">{{ (r.missing_json | fromjson) | join(', ') or '—' }}</td>
+      {% set lc = (r.low_conf or '').split(', ') if r.low_conf else [] %}
+      <td class="wrap" style="max-width:220px">{% if lc %}{{ lc[:6] | join(', ') }}{% if lc|length > 6 %} <span class="eb-muted">+{{ lc|length - 6 }} more</span>{% endif %}{% else %}—{% endif %}</td>
+      {% set pr = (r.error or (((r.flags_json | fromjson) + (r.warnings_json | fromjson))[:2] | join(' · '))) %}
+      <td class="wrap" style="max-width:280px">{{ (pr[:230] ~ ('…' if pr|length > 230 else '')) if pr else '—' }}</td>
+      <td style="white-space:nowrap"><a class="btn btn-primary btn-sm" href="{{ url_for('page_extraction', ext_id=r.id) }}">{{ 'Verify / correct' if r.bill_status in ('NEEDS_REVIEW', 'PARTIAL') else 'Open' }}</a>
+        {% if r.bill_status in ('FAILED','UNSUPPORTED','PARTIAL','NEEDS_REVIEW') %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_retry', ext_id=r.id) }}">Retry</button>{% endif %}
+        {% if is_admin and r.bill_status in ('FAILED','UNSUPPORTED','DUPLICATE','NOT_A_BILL') and not r.resolved_at %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_resolve', ext_id=r.id) }}" data-prompt="Why can this be closed?" data-reload>Mark resolved</button>{% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="11" class="eb-muted" style="text-align:center;padding:24px">Nothing in this list.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {{ pager(page, pages) }}
+</div>
+{% endblock %}

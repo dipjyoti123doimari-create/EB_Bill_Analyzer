@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Plant {{ code }}{% endblock %}
+{% block content %}
+{% set k = d.kpis %}
+<div class="page-header"><h1>{{ code }} — {{ d.plant_name or (d.info.plant_name if d.info) or '' }}</h1>
+  <p>{{ d.supplier or '' }}{% if d.info and d.info.state %} · {{ d.info.state }}{% endif %}</p></div>
+
+{% if k.unverified %}<div class="eb-banner">{{ k.unverified }} of {{ k.bills }} bills for this plant are machine-read and not yet verified by a person.</div>{% endif %}
+
+<div class="kpi-grid-6">
+  <div class="kpi-card"><div class="kpi-label">Current PF {{ ('(' ~ d.current.month ~ ')') if d.current else '' }}</div><div class="kpi-value">{{ (d.current.pf | pf) if d.current and d.current.pf else '—' }}</div><div class="kpi-sub">previous month: {{ (d.previous.pf | pf) if d.previous and d.previous.pf else '—' }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Overall PF (selection)</div><div class="kpi-value">{{ (k.overall_pf | pf) if k.overall_pf else ((k.mean_billed_pf | pf) ~ '*') if k.mean_billed_pf else '—' }}</div><div class="kpi-sub">{{ 'energy-weighted kWh ÷ kVAh' if k.overall_pf else '* mean of billed PFs (no usable kWh/kVAh pair)' }}</div></div>
+  <div class="kpi-card"><div class="kpi-label">Contract demand · Max demand</div><div class="kpi-value" style="font-size:19px">{{ (d.current.cd | num(2)) if d.current and d.current.cd is not none else '—' }} · {{ (d.current.md | num(2)) if d.current and d.current.md is not none else '—' }}</div><div class="kpi-sub">utilisation {{ (d.current.util | pct) if d.current and d.current.util is not none else '—' }} (only when the units are comparable)</div></div>
+  <div class="kpi-card bad"><div class="kpi-label">Actual PF penalty<span class="kpi-tag actual">ACTUAL</span></div><div class="kpi-value">₹ {{ k.pf_penalty | inr(0) }}</div><div class="kpi-sub">{{ k.pf_penalty_bills }} bill(s)</div></div>
+  <div class="kpi-card bad"><div class="kpi-label">Actual excess-demand penalty<span class="kpi-tag actual">ACTUAL</span></div><div class="kpi-value">₹ {{ k.xd_penalty | inr(0) }}</div><div class="kpi-sub">{{ k.xd_bills }} bill(s) · {{ k.violations }} tariff-rule violation(s)</div></div>
+  <div class="kpi-card est"><div class="kpi-label">Estimated PF saving<span class="kpi-tag theory">THEORETICAL</span></div><div class="kpi-value">₹ {{ k.savings | inr(0) }}</div><div class="kpi-sub">kVAh-billed months only, if PF reached {{ cfg.target_pf }}</div></div>
+</div>
+
+<div class="eb-row">
+  <div class="card"><div class="section-title">PF trend</div><div id="ch-pf" class="eb-chart"></div></div>
+  <div class="card"><div class="section-title">Demand: contract vs maximum recorded</div><div id="ch-dem" class="eb-chart"></div>
+    <div class="eb-note">Plotted as read (units can differ between bills — see the table).</div></div>
+</div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Consumer accounts / meters</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Consumer no.</th><th>Board</th><th>Category</th><th>Voltage</th><th class="num">Bills</th><th>Last period end</th>{% if is_admin %}<th>Schedule · category (admin)</th>{% endif %}</tr></thead><tbody>
+  {% for a in d.accounts %}<tr><td>{{ a.consumer_number }}</td><td>{{ a.discom_code or '—' }}</td><td>{{ a.consumer_category or '—' }}</td><td>{{ a.voltage_category or '—' }}</td><td class="num">{{ a.bills }}</td><td>{{ a.last_period_end or '—' }}</td>
+    {% if is_admin %}<td><form class="eb-inline-form" onsubmit="ebPost('{{ url_for('act_account', account_id=a.id) }}', new FormData(this), function(){ location.reload(); }); return false;">
+      <input type="text" name="consumer_category" placeholder="category" value="{{ a.consumer_category or '' }}" style="width:110px"><input type="text" name="voltage_category" placeholder="voltage" value="{{ a.voltage_category or '' }}" style="width:80px">
+      <label style="margin:0"><input type="checkbox" name="schedule_enabled" {% if a.schedule_enabled %}checked{% endif %} style="width:auto"> expect bill every</label><input type="number" name="expected_every_days" value="{{ a.expected_every_days or '' }}" style="width:70px" placeholder="days"><input type="number" name="grace_days" value="{{ a.grace_days if a.grace_days is not none else '' }}" style="width:70px" placeholder="grace">
+      <button class="btn btn-secondary btn-sm" type="submit">Save</button></form></td>{% endif %}</tr>
+  {% else %}<tr><td colspan="7" class="eb-muted">No consumer account has been identified from the bills yet.</td></tr>{% endfor %}</tbody></table></div>
+  {% if d.per_account %}<div class="section-title" style="margin-top:14px">Meter-wise view</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Account</th><th class="num">Bills</th><th class="num">PF</th><th class="num">Cost ₹</th><th class="num">PF penalty ₹</th></tr></thead><tbody>
+  {% for a in d.per_account %}<tr><td>{{ a.account }}</td><td class="num">{{ a.bills }}</td><td class="num">{{ a.pf | pf }}</td><td class="num">{{ a.cost | inr(0) }}</td><td class="num">{{ a.pf_penalty | inr(0) }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="eb-note">Plant totals above combine all meters; this table shows each meter separately.</div>{% endif %}</div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Month by month</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Month</th><th class="num">Bills</th><th class="num">PF</th><th class="num">Contract demand</th><th class="num">Max demand</th><th class="num">Utilisation</th><th class="num">PF penalty ₹</th><th class="num">Excess-demand ₹</th><th class="num">Est. saving ₹</th><th class="num">Cost ₹</th></tr></thead><tbody>
+  {% for m in d.trend | reverse %}<tr><td>{{ m.month }}</td><td class="num">{{ m.bills }}</td><td class="num">{{ m.pf | pf }}</td><td class="num">{{ m.cd | num(2) if m.cd is not none else '—' }}</td><td class="num">{{ m.md | num(2) if m.md is not none else '—' }}</td><td class="num">{{ m.util | pct }}</td><td class="num">{{ m.pf_penalty | inr(0) }}</td><td class="num">{{ m.xd_penalty | inr(0) }}</td><td class="num eb-muted">{{ m.savings | inr(0) }}</td><td class="num">{{ m.cost | inr(0) }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Historical bills</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>Period</th><th>Source</th><th>Bill no.</th><th>PO</th><th>Basis</th><th class="num">kWh</th><th class="num">kVAh</th><th class="num">PF</th><th class="num">Total ₹</th><th>Status</th><th>Original</th></tr></thead><tbody>
+  {% for r in d.bills %}<tr><td>{{ r.period_start or '—' }} → {{ r.period_end or '—' }}</td><td>{{ r.source.replace('_', ' ').title() }}</td><td>{{ r.bill_number or '—' }}</td><td>{{ r.po_number or '—' }}</td><td>{{ r.billing_basis }}</td>
+    <td class="num">{{ r.kwh | num(0) if r.kwh is not none else '—' }}</td><td class="num">{{ r.kvah | num(0) if r.kvah is not none else '—' }}</td><td class="num">{{ r.pf_used | pf }}</td><td class="num">{{ (r.total_bill_amount if r.total_bill_amount is not none else r.total_payable) | inr(0) }}</td>
+    <td><span class="badge {{ BILL_BADGE[r.bill_status] }}">{{ r.bill_status.replace('_', ' ') }}</span></td><td><a class="btn btn-secondary btn-sm" href="{{ url_for('page_bill_redirect', bill_id=r.id) }}">Open bill</a></td></tr>
+  {% else %}<tr><td colspan="11" class="eb-muted">No bills yet.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% if alerts %}<div class="card" style="margin-top:14px"><div class="section-title">Open alerts for this plant</div>
+  {% for a in alerts %}<div class="sevbar {{ a.severity }}" style="margin:8px 0"><span class="badge {{ SEV_BADGE[a.severity] }}">{{ a.severity }}</span> <b>{{ a.title }}</b><div class="eb-note" style="margin:2px 0">{{ a.message }}</div></div>{% endfor %}</div>{% endif %}
+
+<script id="plant-data" type="application/json">{{ {'trend': d.trend, 'good': cfg.pf_good, 'target': cfg.target_pf} | tojson }}</script>
+{% endblock %}
+{% block scripts %}<script>
+(function () {
+  var D = JSON.parse(document.getElementById('plant-data').textContent), T = D.trend, L = T.map(function (m) { return m.month; });
+  ebLine(document.getElementById('ch-pf'), L, [{ name: 'PF', values: T.map(function (m) { return m.pf; }) }], { min: 0.5, max: 1.0, decimals: 3,
+    lines: [{ value: D.target, label: 'target ' + D.target, color: '#34D399' }, { value: D.good, label: 'good ' + D.good, color: '#F59E0B' }] });
+  ebBars(document.getElementById('ch-dem'), L, [{ name: 'Contract demand', values: T.map(function (m) { return m.cd; }), color: '#7A73FF' }, { name: 'Max demand', values: T.map(function (m) { return m.md; }), color: '#00D4FF' }], { decimals: 1 });
+})();
+</script>{% endblock %}
+

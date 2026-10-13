@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Reading upload{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Reading your bill…</h1><p>{{ u.original_name }} · plant {{ u.plant_code }}</p></div>
+<div class="card" style="max-width:640px">
+  <div id="st" class="loading active" style="display:flex"><div class="spinner"></div><span id="msg">Queued — the document is read in the background (scans take a minute or two).</span></div>
+  <p class="eb-note" id="detail"></p>
+  <p><a class="btn btn-secondary btn-sm" href="{{ url_for('page_upload') }}">Back to uploads</a></p>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(function poll() {
+  fetch('/api/upload/{{ u.id }}', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.status === 'PROCESSED' && j.extraction_id) { location.href = '/e/' + j.extraction_id; return; }
+    if (j.status === 'FAILED' || j.status === 'REJECTED') { document.getElementById('msg').textContent = 'The bill could not be read.'; document.getElementById('detail').textContent = j.error || ''; document.getElementById('st').classList.remove('active'); return; }
+    document.getElementById('msg').textContent = j.status === 'PROCESSING' ? 'Reading the document…' : 'Waiting in the queue…';
+    setTimeout(poll, 2500);
+  }).catch(function () { setTimeout(poll, 5000); });
+})();
+</script>{% endblock %}

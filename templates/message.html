@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="glass-card" style="max-width:560px;margin:60px auto"><h3>{{ title }}</h3><p>{{ message }}</p>
+  <p style="margin-top:14px"><a class="btn btn-secondary btn-sm" href="{{ url_for('page_dashboard') }}">Back to the dashboard</a></p></div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Tariff Rules{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Tariff-rule registry</h1>
+  <p>No rule is built in. Enter a rule from the electricity board's tariff order, give its source, and approve it. Only APPROVED rules are used — and only for bills whose billing period they fully cover.</p></div>
+
+<div class="eb-banner">Without an approved rule the dashboards still show every charge printed on the bills, but an <b>independent</b> expected penalty, a contract-demand “violation” and a tolerance check are shown as <i>unavailable</i>. Hypothetical savings (kVAh) use the bill's own average rate unless a rule gives the marginal rate.</div>
+
+<div class="card"><div class="section-title">Rules</div>
+  <div class="eb-scroll"><table class="eb-table"><thead><tr><th>#</th><th>State</th><th>Board</th><th>Category</th><th>Voltage</th><th>Effective</th><th>Basis</th><th class="wrap">PF penalty</th><th class="wrap">PF incentive</th><th>Tolerance %</th><th class="wrap">Excess demand</th><th class="wrap">Rates</th><th class="wrap">Source</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for r in rules %}<tr><td>{{ r.id }}</td><td>{{ r.state or '—' }}</td><td>{{ r.discom_code or '—' }}</td><td>{{ r.consumer_category or 'any' }}</td><td>{{ r.voltage_category or 'any' }}</td><td>{{ r.effective_from }} → {{ r.effective_to or 'open' }}</td><td>{{ r.billing_basis_rule or '—' }}</td>
+    <td class="wrap">{{ r.pf_penalty_rule_json or '—' }}</td><td class="wrap">{{ r.pf_incentive_rule_json or '—' }}</td><td>{{ r.contract_demand_tolerance_pct if r.contract_demand_tolerance_pct is not none else '—' }}</td>
+    <td class="wrap">{{ r.excess_demand_rule_json or '—' }}</td><td class="wrap">{{ r.tariff_rates_json or '—' }}</td><td class="wrap">{{ r.source_reference or '— (cannot be approved)' }}</td>
+    <td><span class="badge {{ 'badge-green' if r.approval_status == 'APPROVED' else 'badge-red' if r.approval_status == 'REJECTED' else 'badge-amber' }}">{{ r.approval_status }}</span>{% if r.approved_by %}<div class="eb-muted">{{ r.approved_by }}</div>{% endif %}</td>
+    <td style="white-space:nowrap">{% if r.approval_status != 'APPROVED' %}<button class="btn btn-primary btn-sm" data-post="{{ url_for('act_tariff', rule_id=r.id, action='approve') }}" data-confirm="Approve rule #{{ r.id }}? Every bill will be re-analysed with it." data-reload>Approve</button>{% endif %}
+      {% if r.approval_status == 'APPROVED' %}<button class="btn btn-secondary btn-sm" data-post="{{ url_for('act_tariff', rule_id=r.id, action='draft') }}" data-confirm="Withdraw approval? Bills will be re-analysed without it." data-reload>Withdraw</button>{% endif %}
+      {% if r.approval_status == 'DRAFT' %}<button class="btn btn-danger btn-sm" data-post="{{ url_for('act_tariff', rule_id=r.id, action='reject') }}" data-reload>Reject</button>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="15" class="eb-muted" style="text-align:center;padding:20px">No tariff rules have been entered.</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="card" style="margin-top:14px"><div class="section-title">Add a rule (saved as a DRAFT)</div>
+  <form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-group"><label>State</label><input type="text" name="state" placeholder="e.g. Karnataka"></div>
+    <div class="form-group"><label>Electricity board (DISCOM code)</label><input type="text" name="discom_code" placeholder="e.g. BESCOM — a state or a board is required"></div>
+    <div class="form-group"><label>Consumer category</label><input type="text" name="consumer_category" placeholder="blank = any (the plant's account must have it set otherwise)"></div>
+    <div class="form-group"><label>Voltage / supply category</label><input type="text" name="voltage_category" placeholder="blank = any"></div>
+    <div class="form-group"><label>Effective from *</label><input type="date" name="effective_from" required></div>
+    <div class="form-group"><label>Effective to</label><input type="date" name="effective_to"></div>
+    <div class="form-group"><label>Billing basis</label><select name="billing_basis_rule"><option value="">not specified</option><option>kWh</option><option>kVAh</option><option>Mixed</option></select></div>
+    <div class="form-group"><label>Contract-demand tolerance %</label><input type="text" name="contract_demand_tolerance_pct" placeholder="permitted excess over the contract demand, in % (as in the tariff order)"></div>
+    <div class="form-group" style="grid-column:1/-1"><label>PF penalty rule (JSON)</label><textarea name="pf_penalty_rule_json" rows="2" placeholder='format only: {"threshold": &lt;PF&gt;, "step": &lt;PF step&gt;, "pct_per_step": &lt;percent&gt;, "rounding": "floor|ceil|exact", "base": "energy_charges"}'></textarea></div>
+    <div class="form-group" style="grid-column:1/-1"><label>PF incentive rule (JSON)</label><textarea name="pf_incentive_rule_json" rows="2" placeholder='format only: {"threshold": &lt;PF&gt;, "step": &lt;PF step&gt;, "pct_per_step": &lt;percent&gt;, "rounding": "floor|ceil|exact", "base": "energy_charges", "max_pct": &lt;optional cap&gt;}'></textarea></div>
+    <div class="form-group" style="grid-column:1/-1"><label>Excess-demand rule (JSON)</label><textarea name="excess_demand_rule_json" rows="2" placeholder='format only: {"excess_basis": "over_contract_demand|over_tolerance_limit", "unit": "kVA|kW", "rate_per_unit": &lt;Rs per unit&gt;, "multiplier": &lt;x&gt;}'></textarea></div>
+    <div class="form-group" style="grid-column:1/-1"><label>Tariff rates (JSON)</label><textarea name="tariff_rates_json" rows="2" placeholder='format only: {"energy_rate_per_kvah": &lt;Rs per kVAh&gt;}'></textarea></div>
+    <div class="form-group" style="grid-column:1/-1"><label>Source document / reference * <span class="eb-muted">(tariff order number and date — required before approval)</span></label><input type="text" name="source_reference"></div>
+    <div class="form-group" style="grid-column:1/-1"><label>Note</label><input type="text" name="note"></div>
+    <div><button class="btn btn-primary" type="submit">Save draft</button></div>
+  </form>
+  <div class="eb-note">PF rule: <code>pct_per_step</code> % of the chosen <code>base</code> for every <code>step</code> of PF below (penalty) or above (incentive) <code>threshold</code>; <code>rounding</code> is floor / ceil / exact. Excess-demand rule: (maximum demand − contract demand [or the tolerance limit]) × rate × multiplier. Bases: energy_charges, demand_charges, energy_and_demand_charges, fixed_energy_demand_charges.</div></div>
+{% endblock %}

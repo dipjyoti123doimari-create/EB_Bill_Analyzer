@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Identification Rules{% endblock %}
+{% block content %}
+
+<h2 style="margin:0 0 4px">Identification Rules</h2>
+<p class="eb-note">These rules decide which Oracle POs count as electricity POs. They are stored in the application database, not in code. Excluded POs are kept (marked, with the reason) so a rule change never loses data; after a change the stored POs are re-evaluated at once, and bills of excluded POs drop out of the dashboards.</p>
+
+<div class="card">
+  <div class="eb-scroll">
+  <table class="eb-table">
+    <thead><tr><th>Type</th><th>Value</th><th>Active</th><th>Note</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr><td>{{ r.rule_type }}</td><td>{{ r.value }}</td>
+          <td>{% if r.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge badge-muted">Off</span>{% endif %}</td>
+          <td class="wrap">{{ r.note or '' }}</td>
+          <td><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="rule_id" value="{{ r.id }}"><input type="hidden" name="op" value="{{ 'off' if r.active else 'on' }}"><button class="btn btn-secondary btn-sm">{{ 'Switch off' if r.active else 'Switch on' }}</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <form method="post" class="eb-inline-form" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="op" value="add">
+    <select name="rule_type">{% for t in types %}<option>{{ t }}</option>{% endfor %}</select><input type="text" name="value" placeholder="value (item code, supplier text, plant code…)" required style="min-width:260px"><input type="text" name="note" placeholder="note"><button class="btn btn-primary btn-sm">Add rule</button></form>
+  <div class="eb-note">ITEM_CODE = item on the PO line · SUPPLIER_INCLUDE = if any exist the supplier name must contain one of them · SUPPLIER_EXCLUDE / DESCRIPTION_EXCLUDE = text that rules a PO out · PLANT_EXCLUDE = exact plant code. A new ITEM_CODE is used by the next Oracle scan.</div>
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 8px">Plants found through PO distributions</h3>
+  <div class="eb-scroll">
+  <table class="eb-table">
+    <thead><tr><th>Plant code</th><th>Plant name</th><th>Electricity POs</th><th>Suppliers / DISCOMs</th><th>Latest PO</th></tr></thead>
+    <tbody>
+    {% for p in plants %}
+      <tr><td>{{ p.plant_code }}</td><td>{{ p.plant_name }}</td><td>{{ p.pos }}</td><td>{{ p.suppliers }}</td><td>{{ p.latest }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% endblock %}
